@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id            String   @id @default(uuid())
+  type          ItemType
+  name          String
+  parentId      String?
+  parent        Item?    @relation("ItemHierarchy", fields: [parentId], references: [id])
+  children      Item[]   @relation("ItemHierarchy")
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Document-only fields (nullable for folders)
+  fileSizeBytes BigInt?
+  mimeType      String?
+  extension     String?
+
+  @@index([parentId, type, name])
+  @@index([name])
+}
+
+enum ItemType {
+  FOLDER
+  DOCUMENT
+}
+
+
