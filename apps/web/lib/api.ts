@@ -81,4 +81,9 @@ export async function deleteItem(itemId: string): Promise<void> {
   await api.delete(`/api/items/${itemId}`);
 }
 
+export async function deleteItems(ids: string[]): Promise<{ deleted: { folders: number; documents: number } }> {
+  const response = await api.post<{ deleted: { folders: number; documents: number } }>('/api/items/delete-bulk', { ids });
+  return response.data;
+}
+
 export default api;

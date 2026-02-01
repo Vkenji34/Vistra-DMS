@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listItems, createFolder, uploadFile, downloadFile, deleteItem } from '@/lib/api';
+import { listItems, createFolder, uploadFile, downloadFile, deleteItem, deleteItems } from '@/lib/api';
 import type { Item, ListItemsParams } from 'shared';
 import { Folder, FileText, Plus, Search, Upload, Loader2, Download, File, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -15,13 +15,21 @@ export default function DocumentsPage() {
   const [showDocModal, setShowDocModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
 
   const { data: items, isLoading, error } = useQuery({
-    queryKey: ['items', { parentId, q: searchQuery }],
+    queryKey: ['items', { parentId, q: searchQuery, page, pageSize }],
     queryFn: () => listItems({ parentId, q: searchQuery }),
   });
+
+  // Reset page when search or parent changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, parentId]);
 
   const queryClient = useQueryClient();
 
@@ -51,6 +59,15 @@ export default function DocumentsPage() {
       queryClient.invalidateQueries({ queryKey: ['items'] });
       setShowDeleteModal(false);
       setItemToDelete(null);
+    },
+  });
+
+  const deleteItemsMutation = useMutation({
+    mutationFn: deleteItems,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      setShowBulkDeleteModal(false);
+      setSelectedItems(new Set());
     },
   });
 
@@ -125,6 +142,15 @@ export default function DocumentsPage() {
               <h1 className="text-xl font-semibold text-gray-900">Documents</h1>
             </div>
             <div className="flex items-center space-x-3">
+              {selectedItems.size > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteModal(true)}
+                  className="bg-red-100 text-red-700 px-4 py-2 rounded-md hover:bg-red-200 transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete ({selectedItems.size})</span>
+                </button>
+              )}
               <button
                 onClick={() => setShowFolderModal(true)}
                 className="btn-secondary flex items-center space-x-2"
@@ -150,21 +176,16 @@ export default function DocumentsPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
-              <button
-                onClick={handleNavigateUp}
-                className={clsx(
-                  'text-sm text-gray-500 hover:text-gray-700',
-                  parentId === undefined && 'opacity-50 cursor-not-allowed'
-                )}
-                disabled={parentId === undefined}
-              >
-                Home
-              </button>
-              {parentId && (
-                <>
-                  <span className="text-gray-400">/</span>
-                  <span className="text-sm text-gray-700">Current Folder</span>
-                </>
+              {parentId ? (
+                <button
+                  onClick={handleNavigateUp}
+                  className="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <Folder className="w-4 h-4" />
+                  <span>Back to parent</span>
+                </button>
+              ) : (
+                <span className="text-sm text-gray-500">Home</span>
               )}
             </div>
             <div className="relative">
@@ -230,13 +251,9 @@ export default function DocumentsPage() {
                   <tr
                     key={item.id}
                     className={clsx(
-                      'hover:bg-gray-50 cursor-pointer transition-colors duration-150',
+                      'hover:bg-gray-50 transition-colors duration-150',
                       selectedItems.has(item.id) && 'bg-primary-50'
                     )}
-                    onClick={() =>
-                      item.type === 'FOLDER' &&
-                      handleNavigateToFolder(item.id, item.name)
-                    }
                   >
                     <td className="relative px-6 py-4">
                       <input
@@ -267,7 +284,16 @@ export default function DocumentsPage() {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
-                            {item.name}
+                            {item.type === 'FOLDER' ? (
+                              <button
+                                onClick={() => handleNavigateToFolder(item.id, item.name)}
+                                className="hover:text-primary-600 hover:underline"
+                              >
+                                {item.name}
+                              </button>
+                            ) : (
+                              item.name
+                            )}
                           </div>
                           <div className="text-sm text-gray-500">
                             {item.type === 'FOLDER' ? 'Folder' : item.extension?.toUpperCase() || 'File'}
@@ -322,6 +348,34 @@ export default function DocumentsPage() {
                 </p>
               </div>
             )}
+
+            {/* Pagination */}
+            {items && items.length > 0 && (
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  Showing {items.length} items
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-500">
+                    Page {page}
+                  </span>
+                  <button
+                    onClick={() => setPage(p => p + 1)}
+                    disabled={items.length < pageSize}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -343,6 +397,7 @@ export default function DocumentsPage() {
       {/* Document Upload Modal */}
       {showDocModal && (
         <UploadFileModal
+          parentId={parentId}
           onClose={() => {
             setShowDocModal(false);
             setUploadError(null);
@@ -350,6 +405,7 @@ export default function DocumentsPage() {
           onSubmit={(data) =>
             uploadFileMutation.mutate({
               ...data,
+              parentId,
               createdBy: 'Current User',
             })
           }
@@ -368,6 +424,16 @@ export default function DocumentsPage() {
           }}
           onConfirm={handleConfirmDelete}
           isLoading={deleteItemMutation.isPending}
+        />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <BulkDeleteModal
+          count={selectedItems.size}
+          onClose={() => setShowBulkDeleteModal(false)}
+          onConfirm={() => deleteItemsMutation.mutate(Array.from(selectedItems))}
+          isLoading={deleteItemsMutation.isPending}
         />
       )}
     </div>
@@ -442,13 +508,15 @@ function CreateFolderModal({
 }
 
 function UploadFileModal({
+  parentId,
   onClose,
   onSubmit,
   isLoading,
   error,
 }: {
+  parentId: string | undefined;
   onClose: () => void;
-  onSubmit: (data: { file: File; name?: string }) => void;
+  onSubmit: (data: { file: File; name?: string; parentId?: string }) => void;
   isLoading: boolean;
   error: string | null;
 }) {
@@ -477,6 +545,7 @@ function UploadFileModal({
     onSubmit({
       file: selectedFile,
       name: customName || undefined,
+      parentId,
     });
   };
 
@@ -661,6 +730,73 @@ function DeleteConfirmModal({
               <>
                 <Trash2 className="w-4 h-4" />
                 <span>Delete</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Bulk Delete Confirmation Modal
+function BulkDeleteModal({
+  count,
+  onClose,
+  onConfirm,
+  isLoading,
+}: {
+  count: number;
+  onClose: () => void;
+  onConfirm: () => void;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 className="text-lg font-semibold text-gray-900">Delete {count} Items</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-red-100">
+              <Trash2 className="h-5 w-5 text-red-600" />
+            </div>
+            <p className="text-gray-700">
+              Are you sure you want to delete <strong>{count} items</strong>?
+            </p>
+          </div>
+          <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-4">
+            Warning: Folders will be deleted along with all their contents.
+          </p>
+          <p className="text-sm text-gray-500">
+            This action cannot be undone.
+          </p>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+          <button onClick={onClose} className="btn-secondary" disabled={isLoading}>
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isLoading}
+            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200 disabled:opacity-50 flex items-center space-x-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Deleting...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                <span>Delete All</span>
               </>
             )}
           </button>

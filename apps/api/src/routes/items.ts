@@ -301,4 +301,48 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/items/delete-bulk - Delete multiple items
+router.post('/delete-bulk', async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body as { ids: string[] };
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        code: 'INVALID_REQUEST',
+        message: 'No item IDs provided',
+      });
+    }
+
+    const deleted = { folders: 0, documents: 0 };
+
+    for (const id of ids) {
+      const item = await prisma.item.findUnique({
+        where: { id },
+      });
+
+      if (!item) continue;
+
+      if (item.type === 'FOLDER') {
+        await deleteFolderRecursive(id);
+        deleted.folders++;
+      } else {
+        await deleteDocument(id);
+        deleted.documents++;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Deleted ${deleted.folders} folders and ${deleted.documents} documents`,
+      deleted,
+    });
+  } catch (error) {
+    console.error('Error deleting items:', error);
+    res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to delete items',
+    });
+  }
+});
+
 export { router as itemsRouter };
